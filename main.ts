@@ -15,9 +15,11 @@ const GIT_BACKUP_SYNC_CLOSE_COMMAND_ID = "obsidian-git:backup-and-close";
 interface WordCountPluginSettings {
   ignoreContractions: boolean;
   ignoreMarkdownComments: boolean;
-  ignoreFrontmatter: boolean; // New setting for ignoring frontmatter
-  showInStatusBar: boolean; // New setting to show/hide in status bar
+  ignoreFrontmatter: boolean; 
+  showInStatusBar: boolean; 
   wordsPerPage: number;
+  marker: string;
+  contAllContentIfNoMarker: boolean;
 }
 
 // Define the default settings
@@ -26,7 +28,9 @@ const DEFAULT_SETTINGS: WordCountPluginSettings = {
   ignoreMarkdownComments: true, // Default to ignoring markdown comments
   ignoreFrontmatter: true, // Default to ignoring frontmatter
   showInStatusBar: true, // Default to showing in status bar
-  wordsPerPage: 275, // Default words per page
+  wordsPerPage: 300, // Default words per page
+  marker: "", // Default marker
+  contAllContentIfNoMarker: true, // Default to count all content if no marker found
 }
 
 export function getWordCount(text: string, ignoreContractions: boolean): number {
@@ -292,6 +296,17 @@ export default class CustomViewPlugin extends Plugin {
         }
       }
 
+      const marker = this.settings.marker;
+      if (marker && marker.length > 0) {
+        const markerIndex = contentToCount.indexOf(marker); // Start searching after the first marker
+        if (markerIndex !== -1) {
+          contentToCount = contentToCount.substring(markerIndex + marker.length);
+        } else if (!this.settings.contAllContentIfNoMarker) {
+          // If no marker found and setting disabled, count nothing
+          contentToCount = '';
+        }
+      }
+
       // Remove markdown comments (between %%) if the setting is enabled
       if (this.settings.ignoreMarkdownComments) {
           // Corrected regex to match newlines without the 's' flag
@@ -455,6 +470,28 @@ class WordCountSettingTab extends PluginSettingTab {
                 this.plugin.settings.ignoreFrontmatter = value;
                 await this.plugin.saveSettings();
             }));
+
+    new Setting(containerEl)
+    .setName('Marker')
+    .setDesc('Enter the string that marks the beginning of the content for word count.')
+    .addText(text => text
+        .setPlaceholder('Enter your marker')
+        .setValue(this.plugin.settings.marker)
+        .onChange(async (value) => {
+            this.plugin.settings.marker = value;
+            await this.plugin.saveSettings(); // Save settings when the value changes
+        }));
+    
+    // Setting for showing in status bar
+    new Setting(containerEl)
+    .setName('Count all if there is no marker')
+    .setDesc('Toggle to count the entire note if marker is set but not found.')
+    .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.contAllContentIfNoMarker)
+        .onChange(async (value) => {
+            this.plugin.settings.contAllContentIfNoMarker = value;
+            await this.plugin.saveSettings();
+        }));
 
     // Setting for showing in status bar
     new Setting(containerEl)
