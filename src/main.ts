@@ -443,7 +443,7 @@ export default class CustomViewPlugin extends Plugin {
         let openedInExistingEditor = false;
         // Iterate through leaves to find an active markdown editor
         this.app.workspace.iterateAllLeaves(leaf => {
-            if (leaf.view instanceof MarkdownView) {
+            if (leaf.view instanceof MarkdownView  && leaf.getRoot() === this.app.workspace.rootSplit) {
                 // Found a markdown editor, open the file in a new tab within this leaf
                 leaf.openFile(firstMatchingFile);
                 openedInExistingEditor = true;
