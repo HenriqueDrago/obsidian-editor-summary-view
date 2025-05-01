@@ -82,6 +82,11 @@ class CustomView extends ItemView {
     return "Custom View";
   }
 
+    // Method to get the view's icon for the ribbon, etc.
+    getIcon(): string {
+    return 'star';
+  }
+
   // This method is called when the view is opened
   async onOpen(): Promise<void> {
     const contentContainer = this.containerEl.children[1]; // Target the content container
