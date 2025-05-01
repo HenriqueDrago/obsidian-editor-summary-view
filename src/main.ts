@@ -1,5 +1,6 @@
-import { Plugin, WorkspaceLeaf, Notice, ItemView, TFile, debounce, App, PluginSettingTab, Setting } from "obsidian";
-import { PULL_ICON, PUSH_ICON, SYNC_CLOSE_ICON, LIST_CHANGED_ICON, GIT_COMMIT_SYNC_ICON } from "src/constants";
+import { Plugin, WorkspaceLeaf, Notice, ItemView, TFile, debounce } from "obsidian";
+import { PULL_ICON, SYNC_CLOSE_ICON, LIST_CHANGED_ICON, GIT_COMMIT_SYNC_ICON } from "src/constants";
+import { CustomViewPluginSettingsTab, CustomViewPluginSettings, DEFAULT_SETTINGS } from "src/settings";
 
 // Define the constant for the custom view type
 const CUSTOM_GIT_VIEW_TYPE = 'git-actions-view'; // Renamed view type slightly
@@ -7,33 +8,22 @@ const CUSTOM_GIT_VIEW_TYPE = 'git-actions-view'; // Renamed view type slightly
 // Define command IDs for the Obsidian Git plugin
 const GIT_PULL_COMMAND_ID = "obsidian-git:pull";
 const GIT_COMMIT_SYNC_COMMAND_ID = "obsidian-git:push";
-const GIT_PUSH_COMMAND_ID = "obsidian-git:push2";
 const GIT_LIST_CHANGED_COMMAND_ID = "obsidian-git:list-changed-files";
 const GIT_BACKUP_SYNC_CLOSE_COMMAND_ID = "obsidian-git:backup-and-close";
 
-// Define the plugin settings interface
-interface WordCountPluginSettings {
-  ignoreContractions: boolean;
-  ignoreMarkdownComments: boolean;
-  ignoreFrontmatter: boolean; 
-  showInStatusBar: boolean; 
-  wordsPerPage: number;
-  marker: string;
-  contAllContentIfNoMarker: boolean;
+// Helper function to check if a file is within a specific folder path
+function isFileInFolder(file: TFile, folderPath: string): boolean {
+  // Normalize paths for comparison
+  const normalizedFilePath = file.path.replace(/\\/g, '/');
+  const normalizedFolderPath = folderPath.replace(/\\/g, '/');
+
+  // Ensure folder path ends with a slash if it's not the root
+  const folderPrefix = normalizedFolderPath === '/' ? '/' : normalizedFolderPath + '/';
+
+  return normalizedFilePath.startsWith(folderPrefix);
 }
 
-// Define the default settings
-const DEFAULT_SETTINGS: WordCountPluginSettings = {
-  ignoreContractions: true, // Default to ignoring contractions
-  ignoreMarkdownComments: true, // Default to ignoring markdown comments
-  ignoreFrontmatter: true, // Default to ignoring frontmatter
-  showInStatusBar: true, // Default to showing in status bar
-  wordsPerPage: 300, // Default words per page
-  marker: "", // Default marker
-  contAllContentIfNoMarker: true, // Default to count all content if no marker found
-}
-
-export function getWordCount(text: string, ignoreContractions: boolean): number {
+function getWordCount(text: string, ignoreContractions: boolean): number {
   let cleanedText = text;
   // Remove common contractions before counting if the setting is enabled
   if (ignoreContractions) {
@@ -63,7 +53,7 @@ export function getWordCount(text: string, ignoreContractions: boolean): number 
   return (cleanedText.match(pattern) || []).length;
 }
 
-export function getCharacterCount(text: string): number {
+function getCharacterCount(text: string): number {
   return text.length;
 }
 
@@ -71,6 +61,7 @@ export function getCharacterCount(text: string): number {
 class CustomView extends ItemView {
   plugin: CustomViewPlugin; // Reference back to the plugin instance
   wordCountDisplayEl: HTMLElement; // Element to display the word count
+  lastNoteDisplayEl: HTMLElement; // Element to display the last opened note path
 
   constructor(leaf: WorkspaceLeaf, plugin: CustomViewPlugin) {
     super(leaf);
@@ -85,11 +76,6 @@ class CustomView extends ItemView {
   // Define the view title
   getDisplayText(): string {
     return "Custom View";
-  }
-
-  // Define the view icon (optional, uses a default icon if not set)
-  getIcon(): string {
-    return 'star'; // Icon for the view header itself
   }
 
   // This method is called when the view is opened
@@ -139,16 +125,6 @@ class CustomView extends ItemView {
       this.plugin.executeGitCommand(GIT_PULL_COMMAND_ID, 'Attempting Git Pull...', 'Error executing Git Pull.');
     });
 
-    // Button for Push
-    const pushButton = iconButtonContainer.createEl('div', {
-      cls: 'clickable-icon git-action-icon-button'
-    });
-    pushButton.innerHTML = PUSH_ICON;
-    pushButton.setAttribute('aria-label', 'Git Push');
-    this.registerDomEvent(pushButton, 'click', () => {
-      this.plugin.executeGitCommand(GIT_PUSH_COMMAND_ID, 'Attempting Git Push...', 'Error executing Git Push.');
-    });
-
     // Button for List Changed Files
      const listChangedButton = iconButtonContainer.createEl('div', {
         cls: 'clickable-icon git-action-icon-button'
@@ -164,8 +140,18 @@ class CustomView extends ItemView {
       cls: 'word-count-display' // Custom class for styling
     });
 
+    // Button to open the last opened note from the target folder
+    const openLastNoteButton = contentContainer.createEl('button', {
+      text: 'Open Lastest Chapter',
+      cls: 'mod-cta' // Obsidian's call-to-action button style
+    });
+    this.registerDomEvent(openLastNoteButton, 'click', () => {
+        this.plugin.openLastNoteFromTargetFolder();
+    });
+
     // Initial update of the word count display
     this.plugin.updateStats();
+    this.updateLastNoteDisplay(this.plugin.lastOpenedNoteInTargetFolder);
   }
 
   // This method is called when the view is closed
@@ -178,11 +164,23 @@ class CustomView extends ItemView {
         this.wordCountDisplayEl.innerHTML = textCount;
     }
   } 
+
+  // Method to update the display element for the last opened note path
+  updateLastNoteDisplay(filePath: string | null) {
+    if (this.lastNoteDisplayEl) {
+        if (filePath) {
+            this.lastNoteDisplayEl.textContent = `Last note in folder: ${filePath}`;
+        } else {
+            this.lastNoteDisplayEl.textContent = 'No note opened yet in the target folder.';
+        }
+    }
+  }
 }
 
 export default class CustomViewPlugin extends Plugin {
   statusBarItemEl: HTMLElement | null = null; // Initialize as null
-  settings: WordCountPluginSettings; // Add settings property
+  settings: CustomViewPluginSettings; // Add settings property
+  lastOpenedNoteInTargetFolder: string | null = null; // Track the last opened note in the target folder
 
   async onload() {
     console.log("Custom View plugin loaded");
@@ -191,7 +189,7 @@ export default class CustomViewPlugin extends Plugin {
     await this.loadSettings();
 
     // Add the settings tab
-    this.addSettingTab(new WordCountSettingTab(this.app, this));
+    this.addSettingTab(new CustomViewPluginSettingsTab(this.app, this));
 
     // Conditionally create status bar item and register events based on setting
     if (this.settings.showInStatusBar) {
@@ -199,7 +197,22 @@ export default class CustomViewPlugin extends Plugin {
     }
 
     this.registerEvent(
-      this.app.workspace.on('active-leaf-change', async () => this.updateStats())
+      this.app.workspace.on('active-leaf-change', async (leaf) => {
+        // Update word count stats
+        this.updateStats();
+
+        // Check if the newly active file is in the target folder and update last opened note
+        const activeFile = this.app.workspace.getActiveFile();
+        if (activeFile instanceof TFile && this.settings.targetFolderPath && isFileInFolder(activeFile, this.settings.targetFolderPath)) {
+            this.lastOpenedNoteInTargetFolder = activeFile.path;
+             // Update the display in the custom view if it's open
+            this.app.workspace.getLeavesOfType(CUSTOM_GIT_VIEW_TYPE).forEach(viewLeaf => {
+                if (viewLeaf.view instanceof CustomView) {
+                    viewLeaf.view.updateLastNoteDisplay(this.lastOpenedNoteInTargetFolder);
+                }
+            });
+        }
+    })
     );
 
     this.registerEvent(
@@ -208,6 +221,12 @@ export default class CustomViewPlugin extends Plugin {
 
     // Update the stats initially
     this.updateStats();
+    
+    // Check if the initial active file is in the target folder
+    const initialActiveFile = this.app.workspace.getActiveFile();
+    if (initialActiveFile instanceof TFile && this.settings.targetFolderPath && isFileInFolder(initialActiveFile, this.settings.targetFolderPath)) {
+        this.lastOpenedNoteInTargetFolder = initialActiveFile.path;
+    }
 
     // Register the custom view
     this.registerView(
@@ -224,16 +243,16 @@ export default class CustomViewPlugin extends Plugin {
         }
     });
 
-    // Add a ribbon icon to open the view (optional)
+    // Add a ribbon icon to open the view
     // Using the same icon as the view itself
     this.addRibbonIcon(this.getIcon(), 'Open Custom View', () => {
         this.activateView();
     });
   }
 
-   // Method to get the view's icon for the ribbon etc.
+   // Method to get the view's icon for the ribbon, etc.
   getIcon(): string {
-    return 'git-merge'; // Icon for the plugin/ribbon/command
+    return 'star';
   }
 
   onunload() {
@@ -241,7 +260,7 @@ export default class CustomViewPlugin extends Plugin {
       this.statusBarItemEl.remove();
       this.statusBarItemEl = null; // Set to null after removing
     }
-    console.log("Custom Git Actions plugin unloaded");
+    console.log("Custom View plugin unloaded");
     // Obsidian automatically unregisters views and commands registered with this.register...
   }
 
@@ -259,6 +278,14 @@ export default class CustomViewPlugin extends Plugin {
     }
     // Update stats immediately after saving settings to reflect other changes
     this.updateStats();
+
+    // Update the last note display in the view based on the new folder setting
+    this.lastOpenedNoteInTargetFolder = null; // Reset when folder setting changes
+    this.app.workspace.getLeavesOfType(CUSTOM_GIT_VIEW_TYPE).forEach(viewLeaf => {
+        if (viewLeaf.view instanceof CustomView) {
+            viewLeaf.view.updateLastNoteDisplay(this.lastOpenedNoteInTargetFolder);
+        }
+    });
   }
 
   createStatusBarItem() {
@@ -380,6 +407,28 @@ export default class CustomViewPlugin extends Plugin {
     }
   }
 
+  // Method to open the last opened note from the target folder
+  async openLastNoteFromTargetFolder() {
+    if (this.lastOpenedNoteInTargetFolder) {
+        const file = this.app.vault.getAbstractFileByPath(this.lastOpenedNoteInTargetFolder);
+        if (file instanceof TFile) {
+            const newLeaf = this.app.workspace.getLeaf('split', 'vertical'); // Opens in a new split
+            await newLeaf.openFile(file);
+        } else {
+            new Notice(`File not found: ${this.lastOpenedNoteInTargetFolder}`);
+            this.lastOpenedNoteInTargetFolder = null; // Clear if file is gone
+            // Update the display in the custom view if it's open
+            this.app.workspace.getLeavesOfType(CUSTOM_GIT_VIEW_TYPE).forEach(viewLeaf => {
+                if (viewLeaf.view instanceof CustomView) {
+                    viewLeaf.view.updateLastNoteDisplay(this.lastOpenedNoteInTargetFolder);
+                }
+            });
+        }
+    } else {
+        new Notice('No note from the target folder has been opened yet.');
+    }
+  }
+
   // Generic method to execute a Git command by ID
   async executeGitCommand(commandId: string, noticeMessage: string, errorMessage: string): Promise<void> {
     const appAny = this.app as any; // Type assertion to access internal commands
@@ -401,108 +450,3 @@ export default class CustomViewPlugin extends Plugin {
   };
 }
 
-// Create a setting tab for the plugin
-class WordCountSettingTab extends PluginSettingTab {
-  plugin: CustomViewPlugin;
-
-  constructor(app: App, plugin: CustomViewPlugin) {
-    super(app, plugin);
-    this.plugin = plugin;
-  }
-
-  display(): void {
-    const { containerEl } = this;
-
-    containerEl.empty(); // Clear the container
-
-    containerEl.createEl('h2', { text: 'Word Count Settings' });
-
-    // Setting for Words per Page
-    new Setting(containerEl)
-      .setName('Words per page')
-      .setDesc('Set the number of words to consider as one page.')
-      .addText(text => text
-        .setValue(this.plugin.settings.wordsPerPage.toString())
-        .setPlaceholder(DEFAULT_SETTINGS.wordsPerPage.toString())
-        .onChange(async (value) => {
-          const numValue = parseInt(value);
-          if (!isNaN(numValue) && numValue > 0) {
-            this.plugin.settings.wordsPerPage = numValue;
-            await this.plugin.saveSettings();
-          } else {
-              // Optionally provide user feedback for invalid input
-              console.warn('Invalid input for Words per page. Please enter a positive number.');
-              // Or reset to the last valid value or default
-              text.setValue(this.plugin.settings.wordsPerPage.toString());
-          }
-        }));
-
-
-    // Add a toggle for ignoring contractions
-    new Setting(containerEl)
-      .setName('Ignore contractions')
-      .setDesc('Toggle to exclude common contractions (e.g., \'s, \'d, \'ll) from the word count.')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.ignoreContractions)
-        .onChange(async (value) => {
-          this.plugin.settings.ignoreContractions = value;
-          await this.plugin.saveSettings(); // Save settings when the toggle changes
-        }));
-
-    // Add a toggle for ignoring markdown comments
-    new Setting(containerEl)
-        .setName('Ignore markdown comments')
-        .setDesc('Toggle to exclude content between %% lines from the count.')
-        .addToggle(toggle => toggle
-            .setValue(this.plugin.settings.ignoreMarkdownComments)
-            .onChange(async (value) => {
-                this.plugin.settings.ignoreMarkdownComments = value;
-                await this.plugin.saveSettings();
-            }));
-
-    // Add a toggle for ignoring frontmatter
-    new Setting(containerEl)
-        .setName('Ignore frontmatter')
-        .setDesc('Toggle to exclude the properties section (between --- lines at the top) from the count.')
-        .addToggle(toggle => toggle
-            .setValue(this.plugin.settings.ignoreFrontmatter)
-            .onChange(async (value) => {
-                this.plugin.settings.ignoreFrontmatter = value;
-                await this.plugin.saveSettings();
-            }));
-
-    new Setting(containerEl)
-    .setName('Marker')
-    .setDesc('Enter the string that marks the beginning of the content for word count.')
-    .addText(text => text
-        .setPlaceholder('Enter your marker')
-        .setValue(this.plugin.settings.marker)
-        .onChange(async (value) => {
-            this.plugin.settings.marker = value;
-            await this.plugin.saveSettings(); // Save settings when the value changes
-        }));
-    
-    // Setting for showing in status bar
-    new Setting(containerEl)
-    .setName('Count all if there is no marker')
-    .setDesc('Toggle to count the entire note if marker is set but not found.')
-    .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.contAllContentIfNoMarker)
-        .onChange(async (value) => {
-            this.plugin.settings.contAllContentIfNoMarker = value;
-            await this.plugin.saveSettings();
-        }));
-
-    // Setting for showing in status bar
-    new Setting(containerEl)
-        .setName('Show in status bar')
-        .setDesc('Toggle to show or hide the word count in the status bar.')
-        .addToggle(toggle => toggle
-            .setValue(this.plugin.settings.showInStatusBar)
-            .onChange(async (value) => {
-                this.plugin.settings.showInStatusBar = value;
-                await this.plugin.saveSettings();
-            }));
-
-  }
-}
