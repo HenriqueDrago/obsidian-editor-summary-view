@@ -1,5 +1,5 @@
-import { Plugin, WorkspaceLeaf, Notice, ItemView, TFile, debounce } from "obsidian";
-import { PULL_ICON, SYNC_CLOSE_ICON, LIST_CHANGED_ICON, GIT_COMMIT_SYNC_ICON } from "src/constants";
+import { Plugin, WorkspaceLeaf, Notice, ItemView, TFile, debounce, MarkdownView } from "obsidian";
+import { PULL_ICON, SYNC_CLOSE_ICON, LIST_CHANGED_ICON, GIT_COMMIT_SYNC_ICON, FILE_CHANGE_ICON } from "src/constants";
 import { CustomViewPluginSettingsTab, CustomViewPluginSettings, DEFAULT_SETTINGS } from "src/settings";
 
 // Define the constant for the custom view type
@@ -17,8 +17,13 @@ function isFileInFolder(file: TFile, folderPath: string): boolean {
   const normalizedFilePath = file.path.replace(/\\/g, '/');
   const normalizedFolderPath = folderPath.replace(/\\/g, '/');
 
-  // Ensure folder path ends with a slash if it's not the root
-  const folderPrefix = normalizedFolderPath === '/' ? '/' : normalizedFolderPath + '/';
+  // Handle root folder case
+  if (normalizedFolderPath === '/' || normalizedFolderPath === '') {
+    return true;
+  }
+
+  // Ensure folder path ends with a slash
+  const folderPrefix = normalizedFolderPath.endsWith('/') ? normalizedFolderPath : normalizedFolderPath + '/';
 
   return normalizedFilePath.startsWith(folderPrefix);
 }
@@ -61,8 +66,7 @@ function getCharacterCount(text: string): number {
 class CustomView extends ItemView {
   plugin: CustomViewPlugin; // Reference back to the plugin instance
   wordCountDisplayEl: HTMLElement; // Element to display the word count
-  lastNoteDisplayEl: HTMLElement; // Element to display the last opened note path
-
+  
   constructor(leaf: WorkspaceLeaf, plugin: CustomViewPlugin) {
     super(leaf);
     this.plugin = plugin;
@@ -135,23 +139,23 @@ class CustomView extends ItemView {
         this.plugin.executeGitCommand(GIT_LIST_CHANGED_COMMAND_ID, 'Attempting to list Git changes...', 'Error listing Git changes.');
     });
 
+    // Button for List Changed Files
+    const openLastNoteButton = iconButtonContainer.createEl('div', {
+      cls: 'clickable-icon git-action-icon-button'
+    });
+    openLastNoteButton.innerHTML = FILE_CHANGE_ICON;
+    openLastNoteButton.setAttribute('aria-label', 'Open Lastest Chapter');
+    this.registerDomEvent(openLastNoteButton, 'click', () => {
+      this.plugin.openFirstNoteWithProperty();
+    });
+
     // Create the element to display the word count below the buttons
     this.wordCountDisplayEl = contentContainer.createEl('div', {
       cls: 'word-count-display' // Custom class for styling
     });
 
-    // Button to open the last opened note from the target folder
-    const openLastNoteButton = contentContainer.createEl('button', {
-      text: 'Open Lastest Chapter',
-      cls: 'mod-cta' // Obsidian's call-to-action button style
-    });
-    this.registerDomEvent(openLastNoteButton, 'click', () => {
-        this.plugin.openLastNoteFromTargetFolder();
-    });
-
     // Initial update of the word count display
     this.plugin.updateStats();
-    this.updateLastNoteDisplay(this.plugin.lastOpenedNoteInTargetFolder);
   }
 
   // This method is called when the view is closed
@@ -164,17 +168,6 @@ class CustomView extends ItemView {
         this.wordCountDisplayEl.innerHTML = textCount;
     }
   } 
-
-  // Method to update the display element for the last opened note path
-  updateLastNoteDisplay(filePath: string | null) {
-    if (this.lastNoteDisplayEl) {
-        if (filePath) {
-            this.lastNoteDisplayEl.textContent = `Last note in folder: ${filePath}`;
-        } else {
-            this.lastNoteDisplayEl.textContent = 'No note opened yet in the target folder.';
-        }
-    }
-  }
 }
 
 export default class CustomViewPlugin extends Plugin {
@@ -200,18 +193,6 @@ export default class CustomViewPlugin extends Plugin {
       this.app.workspace.on('active-leaf-change', async (leaf) => {
         // Update word count stats
         this.updateStats();
-
-        // Check if the newly active file is in the target folder and update last opened note
-        const activeFile = this.app.workspace.getActiveFile();
-        if (activeFile instanceof TFile && this.settings.targetFolderPath && isFileInFolder(activeFile, this.settings.targetFolderPath)) {
-            this.lastOpenedNoteInTargetFolder = activeFile.path;
-             // Update the display in the custom view if it's open
-            this.app.workspace.getLeavesOfType(CUSTOM_GIT_VIEW_TYPE).forEach(viewLeaf => {
-                if (viewLeaf.view instanceof CustomView) {
-                    viewLeaf.view.updateLastNoteDisplay(this.lastOpenedNoteInTargetFolder);
-                }
-            });
-        }
     })
     );
 
@@ -278,14 +259,6 @@ export default class CustomViewPlugin extends Plugin {
     }
     // Update stats immediately after saving settings to reflect other changes
     this.updateStats();
-
-    // Update the last note display in the view based on the new folder setting
-    this.lastOpenedNoteInTargetFolder = null; // Reset when folder setting changes
-    this.app.workspace.getLeavesOfType(CUSTOM_GIT_VIEW_TYPE).forEach(viewLeaf => {
-        if (viewLeaf.view instanceof CustomView) {
-            viewLeaf.view.updateLastNoteDisplay(this.lastOpenedNoteInTargetFolder);
-        }
-    });
   }
 
   createStatusBarItem() {
@@ -407,25 +380,85 @@ export default class CustomViewPlugin extends Plugin {
     }
   }
 
-  // Method to open the last opened note from the target folder
-  async openLastNoteFromTargetFolder() {
-    if (this.lastOpenedNoteInTargetFolder) {
-        const file = this.app.vault.getAbstractFileByPath(this.lastOpenedNoteInTargetFolder);
-        if (file instanceof TFile) {
-            const newLeaf = this.app.workspace.getLeaf('split', 'vertical'); // Opens in a new split
-            await newLeaf.openFile(file);
-        } else {
-            new Notice(`File not found: ${this.lastOpenedNoteInTargetFolder}`);
-            this.lastOpenedNoteInTargetFolder = null; // Clear if file is gone
-            // Update the display in the custom view if it's open
-            this.app.workspace.getLeavesOfType(CUSTOM_GIT_VIEW_TYPE).forEach(viewLeaf => {
-                if (viewLeaf.view instanceof CustomView) {
-                    viewLeaf.view.updateLastNoteDisplay(this.lastOpenedNoteInTargetFolder);
-                }
-            });
+  // New method to find and open the first note matching property criteria
+  async openFirstNoteWithProperty() {
+    const { targetFolderPath, propertyName, propertyValues } = this.settings;
+
+    // Basic validation for settings
+    if (!targetFolderPath || !propertyName || !propertyValues) {
+      new Notice('Please configure the Target Folder Path, Property Name, and Allowed Property Values in plugin settings.');
+      return;
+    }
+
+    const allowedValues = propertyValues.split(',').map(value => value.trim()).filter(value => value.length > 0);
+
+    if (allowedValues.length === 0) {
+         new Notice('Please specify at least one Allowed Property Value in plugin settings.');
+         return;
+    }
+
+    const markdownFiles = this.app.vault.getMarkdownFiles();
+
+    // Filter files based on folder and property
+    const matchingFiles = markdownFiles.filter(file => {
+      // Check if file is in the target folder
+      if (!isFileInFolder(file, targetFolderPath)) {
+        return false;
+      }
+
+      // Get the file's frontmatter cache
+      const fileCache = this.app.metadataCache.getFileCache(file);
+      if (!fileCache || !fileCache.frontmatter) {
+        return false; // No frontmatter
+      }
+
+      // Check if the property exists in the frontmatter
+      const propertyValue = fileCache.frontmatter[propertyName];
+      if (propertyValue === undefined) {
+        return false; // Property not found
+      }
+
+      // Check if the property value matches one of the allowed values
+      // Handle both single values and list values from frontmatter
+      if (Array.isArray(propertyValue)) {
+          // If property is a list, check if any value in the list is in allowedValues
+          return propertyValue.some(val => allowedValues.includes(String(val).trim()));
+      } else {
+          // If property is a single value, check if it's in allowedValues
+          return allowedValues.includes(String(propertyValue).trim());
+      }
+    });
+
+    // Sort the matching files alphabetically by path
+    matchingFiles.sort((a, b) => a.path.localeCompare(b.path));
+
+    if (matchingFiles.length > 0) {
+      const firstMatchingFile = matchingFiles[0];
+      try {
+        let openedInExistingEditor = false;
+        // Iterate through leaves to find an active markdown editor
+        this.app.workspace.iterateAllLeaves(leaf => {
+            if (leaf.view instanceof MarkdownView) {
+                // Found a markdown editor, open the file in a new tab within this leaf
+                leaf.openFile(firstMatchingFile);
+                openedInExistingEditor = true;
+                // Stop iterating once we've opened the file
+                return false;
+            }
+        });
+
+        // If no active editor was found, open in a new vertical split leaf
+        if (!openedInExistingEditor) {
+            const newLeaf = this.app.workspace.getLeaf('split', 'vertical');
+            await newLeaf.openFile(firstMatchingFile);
         }
+
+      } catch (error) {
+         console.error(`Error opening file: ${firstMatchingFile.path}`, error);
+         new Notice(`Failed to open file: ${firstMatchingFile.path}`);
+      }
     } else {
-        new Notice('No note from the target folder has been opened yet.');
+      new Notice(`No notes found in "${targetFolderPath}" with property "${propertyName}" having a value in [${allowedValues.join(', ')}].`);
     }
   }
 

@@ -10,6 +10,8 @@ wordsPerPage: number;
 marker: string;
 contAllContentIfNoMarker: boolean;
 targetFolderPath: string;
+propertyName: string;
+propertyValues: string; // Comma-separated string of allowed values
 }
 
 // Define the default settings
@@ -22,6 +24,8 @@ wordsPerPage: 300, // Default words per page
 marker: "", // Default marker
 contAllContentIfNoMarker: true, // Default to count all content if no marker found
 targetFolderPath: "/", // Default to root
+propertyName: "", // Default property name
+propertyValues: "", // Default allowed values
 }
 
 // Create a setting tab for the plugin
@@ -38,7 +42,10 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
 
         containerEl.empty(); // Clear the container
 
-        containerEl.createEl('h2', { text: 'Word Count Settings' });
+        containerEl.createEl('h2', { text: 'Custom View Plugin Settings' });
+
+        // --- Word Count Settings ---
+        containerEl.createEl('h3', { text: 'Word Count Configuration' });
 
         // Setting for Words per Page
         new Setting(containerEl)
@@ -127,16 +134,41 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl)
-        .setName('Folder for registering last note opened.')
-        .setDesc('Enter the folder path from which you want to track the last note opened. Use \"\\\" for all.')
-        .addText(text => text
-            .setPlaceholder('\\')
-            .setValue(this.plugin.settings.targetFolderPath)
-            .onChange(async (value) => {
-                this.plugin.settings.targetFolderPath = value;
-                await this.plugin.saveSettings(); // Save settings when the value changes
-            }));
+    // --- Note Opening Settings ---
+    containerEl.createEl('h3', { text: 'Note Opening Configuration' });
+
+    new Setting(containerEl)
+      .setName('Target Folder Path')
+      .setDesc('Enter the folder path to search for notes to open. Use "/" for the entire vault.')
+      .addText(text => text
+        .setPlaceholder('/')
+        .setValue(this.plugin.settings.targetFolderPath)
+        .onChange(async (value) => {
+          this.plugin.settings.targetFolderPath = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Property Name')
+      .setDesc('Enter the name of the property to check in note frontmatter.')
+      .addText(text => text
+        .setPlaceholder(DEFAULT_SETTINGS.propertyName)
+        .setValue(this.plugin.settings.propertyName)
+        .onChange(async (value) => {
+          this.plugin.settings.propertyName = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Allowed Property Values')
+      .setDesc('Enter a comma-separated list of values for the property. The note\'s property value must match one of these.')
+      .addText(text => text
+        .setPlaceholder(DEFAULT_SETTINGS.propertyValues)
+        .setValue(this.plugin.settings.propertyValues)
+        .onChange(async (value) => {
+          this.plugin.settings.propertyValues = value;
+          await this.plugin.saveSettings();
+        }));
         
     
     }
