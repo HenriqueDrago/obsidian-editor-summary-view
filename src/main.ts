@@ -155,13 +155,13 @@ class CustomView extends ItemView {
       cls: 'word-count-display' // Custom class for styling
     });
 
-    // Initial update of the word count display
-    this.plugin.updateStats();
+    // Initial update of the word count display - will be handled by the interval
+    // this.plugin.updateStats(); // Removed as interval will handle
   }
 
   // This method is called when the view is closed
   async onClose(): Promise<void> {
-    // Any cleanup logic for the view goes here
+    // No specific listeners to remove in the view itself with polling
   }
 
   updateWordCountDisplay(textCount: string) {
@@ -175,6 +175,7 @@ export default class CustomViewPlugin extends Plugin {
   statusBarItemEl: HTMLElement | null = null; // Initialize as null
   settings: CustomViewPluginSettings; // Add settings property
   lastOpenedNoteInTargetFolder: string | null = null; // Track the last opened note in the target folder
+  private updateInterval: number | null = null; // Store the interval ID
 
   async onload() {
     console.log("Custom View plugin loaded");
@@ -185,23 +186,20 @@ export default class CustomViewPlugin extends Plugin {
     // Add the settings tab
     this.addSettingTab(new CustomViewPluginSettingsTab(this.app, this));
 
-    // Conditionally create status bar item and register events based on setting
+    // Conditionally create status bar item based on setting
     if (this.settings.showInStatusBar) {
       this.createStatusBarItem();
     }
 
+    // Start the periodic update check
+    this.startUpdateInterval();
+
     // Register event for active leaf change (handles switching files)
+    // We still need this to ensure updateStats is called immediately when switching files
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', async (leaf) => {
-        // Update word count stats
         this.updateStats();
     })
-    );
-
-    // Register event for editor changes (handles typing and selection changes)
-    // Keep debounce with a short delay, but use somethingSelected() for accuracy
-    this.registerEvent(
-      this.app.workspace.on('editor-change', debounce(() => this.updateStats(), 100))
     );
 
     // Update the stats initially
@@ -245,6 +243,8 @@ export default class CustomViewPlugin extends Plugin {
       this.statusBarItemEl.remove();
       this.statusBarItemEl = null; // Set to null after removing
     }
+    // Stop the periodic update check
+    this.stopUpdateInterval();
     console.log("Custom View plugin unloaded");
     // Obsidian automatically unregisters views and commands registered with this.register...
   }
@@ -262,7 +262,9 @@ export default class CustomViewPlugin extends Plugin {
         this.removeStatusBarItem();
     }
     // Update stats immediately after saving settings to reflect other changes
-    this.updateStats();
+    this.updateStats(); // Call updateStats immediately to reflect settings changes
+    this.stopUpdateInterval(); // Stop the old interval
+    this.startUpdateInterval(); // Start a new interval with potentially updated settings (though interval time isn't a setting yet)
   }
 
   createStatusBarItem() {
@@ -276,6 +278,25 @@ export default class CustomViewPlugin extends Plugin {
         this.statusBarItemEl = null;
       }
   }
+
+  // Start the periodic update interval
+  startUpdateInterval() {
+      // Clear any existing interval first
+      this.stopUpdateInterval();
+      // Set the interval to call updateStats every 500ms (adjust as needed)
+      this.updateInterval = window.setInterval(() => {
+          this.updateStats();
+      }, 500); // Poll every half second
+  }
+
+  // Stop the periodic update interval
+  stopUpdateInterval() {
+      if (this.updateInterval !== null) {
+          window.clearInterval(this.updateInterval);
+          this.updateInterval = null;
+      }
+  }
+
 
   async updateStats() {
     const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
