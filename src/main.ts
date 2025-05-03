@@ -199,8 +199,9 @@ export default class CustomViewPlugin extends Plugin {
     );
 
     // Register event for editor changes (handles typing and selection changes)
+    // Keep debounce with a short delay, but use somethingSelected() for accuracy
     this.registerEvent(
-      this.app.workspace.on('editor-change', debounce(() => this.updateStats(), 500))
+      this.app.workspace.on('editor-change', debounce(() => this.updateStats(), 100))
     );
 
     // Update the stats initially
@@ -281,14 +282,12 @@ export default class CustomViewPlugin extends Plugin {
 
     if (activeView && activeView.file instanceof TFile) {
       const editor = activeView.editor;
-      const selectedText = editor.getSelection();
-
       let contentToCount: string;
       let source: 'selection' | 'file';
 
-      if (selectedText && selectedText.length > 0) {
-        // Count selected text
-        contentToCount = selectedText;
+      // Use somethingSelected() to explicitly check for a selection
+      if (editor.somethingSelected()) {
+        contentToCount = editor.getSelection();
         source = 'selection';
       } else {
         // Count entire file content
