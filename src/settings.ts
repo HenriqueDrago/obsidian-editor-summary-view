@@ -42,7 +42,7 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
 
         containerEl.empty(); // Clear the container
 
-        containerEl.createEl('h2', { text: 'Custom View Plugin Settings' });
+        containerEl.createEl('h2', { text: 'Editor Summary Plugin Settings' });
 
         // --- Word Count Settings ---
         containerEl.createEl('h3', { text: 'Word Count Configuration' });
