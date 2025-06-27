@@ -334,13 +334,17 @@ updateViews() {
   }
 
   async executeGitCommand(commandId: string, noticeMessage: string, errorMessage: string): Promise<void> {
-    const obsidianGit = (this.app as any).plugins.plugins['obsidian-git'];
-    if (!obsidianGit) {
-      new Notice('Obsidian Git plugin not found. Please install and enable it.'); return;
-    }
+    const appAny = this.app as any; // Type assertion to access internal commands
     try {
       new Notice(noticeMessage);
-      await obsidianGit.git.pull(); // Example, replace with actual command execution if API allows
+      // Ensure the Obsidian Git plugin is actually enabled and the command exists
+      if (appAny.commands.commands[commandId]) {
+           await appAny.commands.executeCommandById(commandId);
+      } else {
+           const missingPluginMsg = `Git Command ID "${commandId}" not found. Is the Obsidian Git plugin installed and enabled?`;
+           console.error(missingPluginMsg);
+           new Notice(missingPluginMsg);
+      }
     } catch (error) {
       console.error(`Error executing Git command "${commandId}":`, error);
       new Notice(errorMessage);
