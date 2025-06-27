@@ -27,7 +27,7 @@ function getWordCount(text: string, ignoreContractions: boolean): number {
   if (ignoreContractions) {
     cleanedText = text.replace(/'(s|d|ll|ve|re|m)\b/gi, '');
   }
-  const pattern = /[\p{L}\p{N}'-]+/gu;
+  const pattern = /[\p{L}\p{N}'‘’\p{Pd}]+/gu;
   return (cleanedText.match(pattern) || []).length;
 }
 
@@ -116,14 +116,27 @@ class CustomView extends ItemView {
             while ((match = linkRegex.exec(valStr)) !== null) {
               if (match.index > lastIndex) valueContainer.appendText(valStr.substring(lastIndex, match.index));
               
-              const linkText = match[1];
-              const linkEl = valueContainer.createEl('a', { text: linkText, href: '#', cls: 'internal-link' });
+              const fullLinkText = match[1]; // This is "path/path2/filename.md|Name" or "just/a/path.md"
               
-              // --- THIS IS THE FIX ---
-              // Switched from 'click' to 'mousedown' to fire before the focus change
+              // Determine the display text and the actual path for the link
+              let displayText: string;
+              let linkPath: string;
+              
+              const pipeIndex = fullLinkText.indexOf('|');
+              if (pipeIndex !== -1) {
+                  linkPath = fullLinkText.substring(0, pipeIndex);
+                  displayText = fullLinkText.substring(pipeIndex + 1);
+              } else {
+                  linkPath = fullLinkText;
+                  displayText = fullLinkText;
+              }
+
+              const linkEl = valueContainer.createEl('a', { text: displayText, href: '#', cls: 'internal-link' });
+              
+              // The event handler should open the clean path
               this.registerDomEvent(linkEl, 'mousedown', (evt: MouseEvent) => {
                 evt.preventDefault();
-                this.plugin.openLinkInMainEditor(linkText);
+                this.plugin.openLinkInMainEditor(linkPath);
               });
               // --- END OF FIX ---
 
