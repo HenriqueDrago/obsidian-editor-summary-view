@@ -1,5 +1,5 @@
-import { Plugin, WorkspaceLeaf, Notice, ItemView, TFile, MarkdownView } from "obsidian";
-import { PULL_ICON, SYNC_CLOSE_ICON, LIST_CHANGED_ICON, GIT_COMMIT_SYNC_ICON, FILE_CHANGE_ICON, spaceDelimitedChars } from "src/constants";
+import { Plugin, WorkspaceLeaf, Notice, ItemView, TFile, MarkdownView, debounce } from "obsidian";
+import { PULL_ICON, SYNC_CLOSE_ICON, LIST_CHANGED_ICON, GIT_COMMIT_SYNC_ICON, FILE_CHANGE_ICON } from "src/constants";
 import { CustomViewPluginSettingsTab, CustomViewPluginSettings, DEFAULT_SETTINGS } from "src/settings";
 
 // Define the constant for the custom view type
@@ -23,12 +23,12 @@ function isFileInFolder(file: TFile, folderPath: string): boolean {
 }
 
 function getWordCount(text: string, ignoreContractions: boolean): number {
-  let cleanedText = text;
-  if (ignoreContractions) {
-    cleanedText = text.replace(/'(s|d|ll|ve|re|m)\b/gi, '');
-  }
-  const pattern = /[\p{L}\p{N}'‘’\p{Pd}]+/gu;
-  return (cleanedText.match(pattern) || []).length;
+	let cleanedText = text;
+	if (ignoreContractions) {
+		cleanedText = text.replace(/('|’)(s|d|ll|ve|re|m|t)\b/gi, "");
+	}
+	const pattern = /[\p{L}\p{N}–-]+/gu;
+	return (cleanedText.match(pattern) || []).length;
 }
 
 function getCharacterCount(text: string): number {
@@ -67,7 +67,15 @@ class CustomView extends ItemView {
   }
 
   private createIconButtons(container: HTMLElement) {
-    // This helper function remains unchanged
+    const syncCloseButton = container.createEl('div', { 
+        cls: 'clickable-icon git-action-icon-button mod-warning'
+    });
+    syncCloseButton.innerHTML = SYNC_CLOSE_ICON;
+    syncCloseButton.setAttribute('aria-label', 'Backup, Sync and Close App');
+    this.registerDomEvent(syncCloseButton, 'click', () => {
+        this.plugin.executeGitCommand(GIT_BACKUP_SYNC_CLOSE_COMMAND_ID, 'Attempting to commit, sync, and close...', 'Error executing Git Backup/Sync/Close.');
+    });
+
     const createButton = (icon: string, ariaLabel: string, commandId: string, noticeMsg: string, errorMsg: string) => {
       const button = container.createEl('div', { cls: 'clickable-icon git-action-icon-button' });
       button.innerHTML = icon;
@@ -77,7 +85,7 @@ class CustomView extends ItemView {
       });
     };
 
-    createButton(SYNC_CLOSE_ICON, 'Backup, Sync and Close App', GIT_BACKUP_SYNC_CLOSE_COMMAND_ID, 'Attempting to commit, sync, and close...', 'Error executing Git Backup/Sync/Close.');
+    //createButton(SYNC_CLOSE_ICON, 'Backup, Sync and Close App', GIT_BACKUP_SYNC_CLOSE_COMMAND_ID, 'Attempting to commit, sync, and close...', 'Error executing Git Backup/Sync/Close.');
     createButton(GIT_COMMIT_SYNC_ICON, 'Git Commit and Sync', GIT_COMMIT_SYNC_COMMAND_ID, 'Attempting Git Commit and Sync...', 'Error executing Git Commit and Sync.');
     createButton(PULL_ICON, 'Git Pull', GIT_PULL_COMMAND_ID, 'Attempting Git Pull...', 'Error executing Git Pull.');
     createButton(LIST_CHANGED_ICON, 'List Changed Files', GIT_LIST_CHANGED_COMMAND_ID, 'Attempting to list Git changes...', 'Error listing Git changes.');
@@ -187,6 +195,12 @@ export default class CustomViewPlugin extends Plugin {
             this.calculateAndUpdate();
         }
     }));
+
+    this.registerDomEvent(document, 'selectionchange', debounce(() => {
+      if (this.app.workspace.getActiveViewOfType(MarkdownView)) {
+          this.calculateAndUpdate();
+      }
+    }, 200)); // Use of a 200ms debounce to avoid excessive updates
 
     // Initial load
     if (this.app.workspace.getActiveViewOfType(MarkdownView)) {
