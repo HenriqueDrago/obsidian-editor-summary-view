@@ -12,6 +12,7 @@ contAllContentIfNoMarker: boolean;
 targetFolderPath: string;
 propertyName: string;
 propertyValues: string; // Comma-separated string of allowed values
+showQuotesModule: boolean;
 }
 
 // Define the default settings
@@ -26,6 +27,7 @@ contAllContentIfNoMarker: true, // Default to count all content if no marker fou
 targetFolderPath: "/", // Default to root
 propertyName: "", // Default property name
 propertyValues: "", // Default allowed values
+showQuotesModule: true, // Default to showing quotes module
 }
 
 // Create a setting tab for the plugin
@@ -134,6 +136,18 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+    // --- Quotes Analysis Settings ---
+    new Setting(containerEl)
+        .setName('Show quotes analysis module')
+        .setDesc('Toggle to show or hide the single and double quotes counter and replacer in the custom view.')
+        .addToggle(toggle => toggle
+            .setValue(this.plugin.settings.showQuotesModule)
+            .onChange(async (value) => {
+                this.plugin.settings.showQuotesModule = value;
+                await this.plugin.saveSettings();
+                this.plugin.updateViews(); // Force a view update to show/hide the module
+            }));
+
     // --- Note Opening Settings ---
     containerEl.createEl('h3', { text: 'Note Opening Configuration' });
 
@@ -168,8 +182,7 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.propertyValues = value;
           await this.plugin.saveSettings();
-        }));
-        
+        }));        
     
     }
   }

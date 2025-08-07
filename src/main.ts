@@ -1,6 +1,5 @@
 import { Plugin, WorkspaceLeaf, Notice, ItemView, TFile, MarkdownView, debounce } from "obsidian";
-import { PULL_ICON, SYNC_CLOSE_ICON, LIST_CHANGED_ICON, GIT_COMMIT_SYNC_ICON, FILE_CHANGE_ICON } from "src/constants";
-import { CustomViewPluginSettingsTab, CustomViewPluginSettings, DEFAULT_SETTINGS } from "src/settings";
+import { PULL_ICON, SYNC_CLOSE_ICON, LIST_CHANGED_ICON, GIT_COMMIT_SYNC_ICON, FILE_CHANGE_ICON, SINGLE_QUOTE_ICON, DOUBLE_QUOTE_ICON } from "src/constants";import { CustomViewPluginSettingsTab, CustomViewPluginSettings, DEFAULT_SETTINGS } from "src/settings";
 
 // Define the constant for the custom view type
 const CUSTOM_GIT_VIEW_TYPE = 'git-actions-view';
@@ -35,12 +34,19 @@ function getCharacterCount(text: string): number {
   return text.length;
 }
 
+function getCharOccurrences(text: string, char: string): number {
+  // Use a regex for counting to handle potential special characters in `char`
+  const regex = new RegExp(char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+  return (text.match(regex) || []).length;
+}
+
 // --- Custom View Class ---
 // Define the custom view class
 class CustomView extends ItemView {
   plugin: CustomViewPlugin;
   wordCountDisplayEl: HTMLElement;
   propertiesDisplayEl: HTMLElement;
+  quotesDisplayEl: HTMLElement;
 
   constructor(leaf: WorkspaceLeaf, plugin: CustomViewPlugin) {
     super(leaf);
@@ -59,7 +65,11 @@ class CustomView extends ItemView {
     const iconButtonContainer = contentContainer.createDiv({ cls: 'git-action-icon-button-group' });
     this.createIconButtons(iconButtonContainer);
 
+    contentContainer.createEl('h4', { text: 'Word Count', cls: 'properties-title' });
+
     this.wordCountDisplayEl = contentContainer.createEl('div', { cls: 'word-count-display' });
+    this.quotesDisplayEl = contentContainer.createEl('div', { cls: 'quotes-display' });
+
     contentContainer.createEl('h4', { text: 'Active File Properties', cls: 'properties-title' });
     this.propertiesDisplayEl = contentContainer.createEl('div', { cls: 'properties-display' });
 
@@ -98,6 +108,50 @@ class CustomView extends ItemView {
   
   updateWordCountDisplay(textCount: string) {
     if (this.wordCountDisplayEl) this.wordCountDisplayEl.innerHTML = textCount;
+  }
+
+  updateQuotesDisplay(singleCount: number, doubleCount: number) {
+    if (!this.quotesDisplayEl) return;
+    this.quotesDisplayEl.empty();
+
+    if (!this.plugin.settings.showQuotesModule) {
+      return;
+    }
+
+    const container = this.quotesDisplayEl.createDiv({ cls: 'quotes-analysis-container' });
+    container.createEl('h4', { text: 'Quotes Analysis', cls: 'properties-title' });
+
+    // --- Button Group ---
+    const buttonGroup = container.createDiv({ cls: 'quote-button-group' });
+
+    const replaceSingleBtn = buttonGroup.createDiv({
+      cls: 'clickable-icon git-action-icon-button', // Re-use existing button style
+      attr: { 'aria-label': 'Replace Single Quotes' }
+    });
+    replaceSingleBtn.innerHTML = SINGLE_QUOTE_ICON;
+    this.registerDomEvent(replaceSingleBtn, 'mousedown', () => {
+      this.plugin.replaceQuotes('single');
+    });
+
+    const replaceDoubleBtn = buttonGroup.createDiv({
+      cls: 'clickable-icon git-action-icon-button', // Re-use existing button style
+      attr: { 'aria-label': 'Replace Double Quotes' }
+    });
+    replaceDoubleBtn.innerHTML = DOUBLE_QUOTE_ICON;
+    this.registerDomEvent(replaceDoubleBtn, 'mousedown', () => {
+      this.plugin.replaceQuotes('double');
+    });
+
+    // --- Counter Group ---
+    const counterGroup = container.createDiv({ cls: 'quote-counter-group' });
+    counterGroup.createDiv({
+      cls: 'quote-counter-item',
+      text: `Single Quotes ('): ${singleCount}`
+    });
+    counterGroup.createDiv({
+      cls: 'quote-counter-item',
+      text: `Double Quotes ("): ${doubleCount}`
+    });
   }
 
   updatePropertiesDisplay(properties: any) {
@@ -143,10 +197,20 @@ class CustomView extends ItemView {
               
               // The event handler should open the clean path
               this.registerDomEvent(linkEl, 'mousedown', (evt: MouseEvent) => {
-                evt.preventDefault();
-                this.plugin.openLinkInMainEditor(linkPath);
+                // evt.button === 2 is the right-click, 1 is middle-click
+                if (evt.button === 2 || evt.button === 1) {
+                  // Prevent the default browser context menu from appearing
+                  evt.preventDefault();
+                  // Open the link in a new tab/leaf. The 'true' at the end does this.
+                  this.plugin.app.workspace.openLinkText(linkPath, '', true);
+                }
+                // 0 is left-click
+                else if (evt.button === 0) {
+                  evt.preventDefault();
+                  // Open the link in the last active main editor pane.
+                  this.plugin.openLinkInMainEditor(linkPath);
+                }
               });
-              // --- END OF FIX ---
 
               lastIndex = linkRegex.lastIndex;
             }
@@ -168,7 +232,13 @@ export default class CustomViewPlugin extends Plugin {
   settings: CustomViewPluginSettings;
   
   private lastActiveEditorLeaf: WorkspaceLeaf | null = null;
-  private cachedViewData: { wordCountText: string, properties: any, statusBarText: string } | null = null;
+  private cachedViewData: {
+    wordCountText: string,
+    properties: any,
+    statusBarText: string,
+    singleQuoteCount: number,
+    doubleQuoteCount: number,
+  } | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -235,8 +305,7 @@ export default class CustomViewPlugin extends Plugin {
       const file = activeMdView.file;
       const isSelection = editor.somethingSelected();
       let contentToCount = isSelection ? editor.getSelection() : editor.getValue();
-      let source: 'selection' | 'file' = isSelection ? 'selection' : 'file';
-
+      const source: 'selection' | 'file' = isSelection ? 'selection' : 'file';
       const fileCache = this.app.metadataCache.getFileCache(file);
       const properties = fileCache?.frontmatter;
 
@@ -266,12 +335,16 @@ export default class CustomViewPlugin extends Plugin {
       const wordCount = getWordCount(contentToCount, this.settings.ignoreContractions);
       const pageCount = (wordCount / this.settings.wordsPerPage).toFixed(2);
       const sourceIndicator = source === 'selection' ? 'Selected ' : 'Total ';
+      const singleQuoteCount = getCharOccurrences(contentToCount, "'");
+      const doubleQuoteCount = getCharOccurrences(contentToCount, '"');
 
       // Cache the new data
       this.cachedViewData = {
         wordCountText: `${sourceIndicator}Chars: ${charCount}<br>${sourceIndicator}Words: ${wordCount}<br>${sourceIndicator}Pages: ${pageCount}`,
         properties: properties,
-        statusBarText: `${sourceIndicator}Chars: ${charCount} | Words: ${wordCount} | Pages: ${pageCount}`
+        statusBarText: `${sourceIndicator}Chars: ${charCount} | Words: ${wordCount} | Pages: ${pageCount}`,
+        singleQuoteCount,
+        doubleQuoteCount,
       };
     }
   
@@ -289,6 +362,7 @@ updateViews() {
         if (leaf.view instanceof CustomView) {
           leaf.view.updateWordCountDisplay(data.wordCountText);
           leaf.view.updatePropertiesDisplay(data.properties);
+          leaf.view.updateQuotesDisplay(data.singleQuoteCount, data.doubleQuoteCount);
         }
       });
     } else {
@@ -298,6 +372,7 @@ updateViews() {
         if (leaf.view instanceof CustomView) {
           leaf.view.updateWordCountDisplay(`Chars: 0<br>Words: 0<br>Pages: 0.00`);
           leaf.view.updatePropertiesDisplay(null);
+          leaf.view.updateQuotesDisplay(0, 0);
         }
       });
     }
@@ -363,5 +438,85 @@ updateViews() {
       console.error(`Error executing Git command "${commandId}":`, error);
       new Notice(errorMessage);
     }
+  }
+
+async replaceQuotes(quoteType: 'single' | 'double') {
+    const targetView = this.lastActiveEditorLeaf?.view as MarkdownView;
+
+    if (!targetView) {
+      new Notice('No editor selected. Please click into a note before replacing quotes.');
+      return;
+    }
+
+    const editor = targetView.editor;
+    const isSelection = editor.somethingSelected();
+
+    // This is the function that will perform the replacement
+    const performReplacement = (text: string): string => {
+        if (quoteType === 'single') {
+            // Replacing with a right single quote/apostrophe is a strong heuristic.
+            return text.replace(/'/g, '’');
+        } else {
+            // For double quotes, we alternate between opening and closing.
+            let isOpening = true;
+            return text.replace(/"/g, () => {
+                if (isOpening) {
+                    isOpening = false;
+                    return '“'; // Opening double quote
+                } else {
+                    isOpening = true;
+                    return '”'; // Closing double quote
+                }
+            });
+        }
+    };
+
+    if (isSelection) {
+      const selection = editor.getSelection();
+      const replacedSelection = performReplacement(selection);
+
+      if (selection !== replacedSelection) {
+        editor.replaceSelection(replacedSelection);
+        new Notice(`Replaced quotes in selection.`);
+      } else {
+        new Notice(`No matching quotes found in selection.`);
+      }
+    } else {
+      // Replace in the whole "countable" area
+      const originalContent = editor.getValue();
+      let startIndex = 0;
+
+      // Logic to find the start of the countable content, mirroring calculateAndUpdate
+      if (this.settings.ignoreFrontmatter && originalContent.startsWith('---')) {
+        const secondDashIndex = originalContent.indexOf('---', 3);
+        if (secondDashIndex !== -1) {
+          const endOfProperties = originalContent.indexOf('\n', secondDashIndex);
+          if (endOfProperties !== -1) {
+            startIndex = endOfProperties + 1;
+          }
+        }
+      }
+      if (this.settings.marker && this.settings.marker.length > 0) {
+        const markerIndex = originalContent.indexOf(this.settings.marker, startIndex);
+        if (markerIndex !== -1) {
+          startIndex = markerIndex + this.settings.marker.length;
+        } else if (!this.settings.contAllContentIfNoMarker) {
+          new Notice('Marker not found. Nothing to replace.');
+          return;
+        }
+      }
+
+      const prefix = originalContent.substring(0, startIndex);
+      const body = originalContent.substring(startIndex);
+      const newBody = performReplacement(body);
+
+      if (body !== newBody) {
+        editor.setValue(prefix + newBody);
+        new Notice(`Replaced quotes in the document.`);
+      } else {
+        new Notice(`No matching quotes found in the document body.`);
+      }
+    }
+    // The editor-change event will trigger calculateAndUpdate automatically
   }
 }
