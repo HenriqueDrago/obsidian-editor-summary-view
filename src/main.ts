@@ -125,7 +125,7 @@ class CustomView extends ItemView {
     const buttonGroup = container.createDiv({ cls: 'quote-button-group' });
 
     const replaceSingleBtn = buttonGroup.createDiv({
-      cls: 'clickable-icon git-action-icon-button', // Re-use existing button style
+      cls: 'clickable-icon git-action-icon-button custom-border-button single-quote-button', // Re-use existing button style
       attr: { 'aria-label': 'Replace Single Quotes' }
     });
     replaceSingleBtn.innerHTML = SINGLE_QUOTE_ICON;
@@ -134,7 +134,7 @@ class CustomView extends ItemView {
     });
 
     const replaceDoubleBtn = buttonGroup.createDiv({
-      cls: 'clickable-icon git-action-icon-button', // Re-use existing button style
+      cls: 'clickable-icon git-action-icon-button custom-border-button', // Re-use existing button style
       attr: { 'aria-label': 'Replace Double Quotes' }
     });
     replaceDoubleBtn.innerHTML = DOUBLE_QUOTE_ICON;

@@ -88,6 +88,19 @@
 	gap: 5px;
 }
 
+.custom-border-button {
+	border: 2px solid var(--nav-item-color);
+	border-radius: 5px;
+	padding: 0px;
+	padding-left: 2px;
+	padding-right: 1px;
+}
+
+.single-quote-button {
+	padding-left: 3px;
+	padding-right: 0px;
+}
+
 /* Style for the text counters to match the main word count */
 .quote-counter-item {
 	color: var(--nav-item-color);
