@@ -1,0 +1,110 @@
+/* Style the container for the buttons */
+.git-actions-view-container {
+	padding: 0px;
+}
+
+/* Style the button group for horizontal layout */
+.git-action-icon-button-group {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	align-items: center;
+}
+
+/* Style the word count display */
+.word-count-display {
+	color: var(--nav-item-color);
+	font-size: var(--nav-item-size);
+	font-weight: var(--nav-item-weight);
+	line-height: var(--line-height-tight);
+	margin-top: 2px;
+	margin-bottom: 0px;
+}
+
+/* Style for the properties section title */
+.properties-title {
+	margin-top: 5px;
+	margin-bottom: 0px;
+	font-size: var(--font-ui-small);
+	font-weight: bold;
+	color: var(--text-muted);
+}
+
+/* Remove border/background from the main properties container */
+.properties-display {
+	padding: 0px;
+	border: none;
+	background-color: transparent;
+}
+
+/* Style the list to be a flexible, wrapping container for the pills */
+.properties-list {
+	list-style-type: none;
+	padding-left: 0;
+	margin: 0px;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 8px; /* Vertical and horizontal gap between pills */
+}
+
+/* Style each property item as a "pill" or "tag" */
+.properties-list li {
+	display: inline-block;
+	padding: 4px 10px;
+	background-color: var(--background-primary); /* Changed background color */
+	border-radius: 16px; /* Creates the pill shape */
+	border: 1px solid var(--background-modifier-border);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.5;
+	max-width: 300px; /* Text will now wrap if the pill exceeds this width */
+}
+
+/* Style for the property key (e.g., "Status:") */
+.properties-list strong {
+	color: var(--text-muted);
+	margin-right: 4px;
+}
+
+/* Style for clickable internal links within pills */
+.properties-list .internal-link {
+	cursor: pointer;
+	color: var(--link-color);
+	font-weight: 500;
+}
+
+.properties-list .internal-link:hover {
+	color: var(--text-accent-hover);
+}
+
+/* --- Quotes Analysis Module --- */
+
+.quotes-analysis-container {
+	margin-bottom: 5px;
+}
+
+/* A flex container for the buttons, just like the main git actions */
+.quote-button-group {
+	display: flex;
+	gap: 5px;
+}
+
+.custom-border-button {
+	border: 2px solid var(--nav-item-color);
+	border-radius: 5px;
+	padding: 0px;
+	padding-left: 2px;
+	padding-right: 1px;
+}
+
+.single-quote-button {
+	padding-left: 3px;
+	padding-right: 0px;
+}
+
+/* Style for the text counters to match the main word count */
+.quote-counter-item {
+	color: var(--nav-item-color);
+	font-size: var(--nav-item-size);
+	font-weight: var(--nav-item-weight);
+	line-height: var(--line-height-tight);
+}
