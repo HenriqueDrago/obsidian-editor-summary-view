@@ -2,17 +2,17 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import CustomViewPlugin from "src/main"
 // Define the plugin settings interface
 export interface CustomViewPluginSettings {
-ignoreContractions: boolean;
-ignoreMarkdownComments: boolean;
-ignoreFrontmatter: boolean; 
-showInStatusBar: boolean; 
-wordsPerPage: number;
-marker: string;
-contAllContentIfNoMarker: boolean;
-targetFolderPath: string;
-propertyName: string;
+ignoreContractions: boolean; // Whether to ignore common contractions in the word count
+ignoreMarkdownComments: boolean; // Whether to ignore markdown comments (content between %% lines)
+ignoreFrontmatter: boolean;  // Whether to ignore frontmatter (properties section between --- lines at the top)
+showInStatusBar: boolean; // Whether to show the word count in the status bar
+wordsPerPage: number; // Number of words to consider as one page
+marker: string; // String that marks the beginning of the content for word count
+contAllContentIfNoMarker: boolean; // Whether to count all content if the marker is set but not found
+targetFolderPath: string; // Path to the target folder for the plugin
+propertyName: string; // Name of the property to be used in the custom view
 propertyValues: string; // Comma-separated string of allowed values
-showQuotesModule: boolean;
+showQuotesModule: boolean; // Whether to show the quotes analysis module in the custom view
 }
 
 // Define the default settings
@@ -54,17 +54,18 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
         .setName('Words per page')
         .setDesc('Set the number of words to consider as one page.')
         .addText(text => text
-            .setValue(this.plugin.settings.wordsPerPage.toString())
+            // Set the initial value and placeholder
+            .setValue(this.plugin.settings.wordsPerPage.toString()) 
             .setPlaceholder(DEFAULT_SETTINGS.wordsPerPage.toString())
+            // Validate input to ensure it's a positive integer
             .onChange(async (value) => {
             const numValue = parseInt(value);
             if (!isNaN(numValue) && numValue > 0) {
                 this.plugin.settings.wordsPerPage = numValue;
-                await this.plugin.saveSettings();
+                await this.plugin.saveSettings(); // Save settings when the value changes
             } else {
-                // Optionally provide user feedback for invalid input
+                // If the input is invalid, reset to the previous valid value and show a warning
                 console.warn('Invalid input for Words per page. Please enter a positive number.');
-                // Or reset to the last valid value or default
                 text.setValue(this.plugin.settings.wordsPerPage.toString());
             }
             }));
@@ -103,6 +104,7 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        // Setting for the marker
         new Setting(containerEl)
         .setName('Marker')
         .setDesc('Enter the string that marks the beginning of the content for word count.')
@@ -114,7 +116,7 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
                 await this.plugin.saveSettings(); // Save settings when the value changes
             }));
         
-        // Setting for showing in status bar
+        // Setting for counting all content if marker is not found
         new Setting(containerEl)
         .setName('Count all if there is no marker')
         .setDesc('Toggle to count the entire note if marker is set but not found.')
@@ -136,7 +138,7 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-    // --- Quotes Analysis Settings ---
+    // Setting for showing quotes analysis module
     new Setting(containerEl)
         .setName('Show quotes analysis module')
         .setDesc('Toggle to show or hide the single and double quotes counter and replacer in the custom view.')
@@ -151,6 +153,7 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
     // --- Note Opening Settings ---
     containerEl.createEl('h3', { text: 'Note Opening Configuration' });
 
+    // Setting for target folder path
     new Setting(containerEl)
       .setName('Target Folder Path')
       .setDesc('Enter the folder path to search for notes to open. Use "/" for the entire vault.')
@@ -161,7 +164,8 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
           this.plugin.settings.targetFolderPath = value;
           await this.plugin.saveSettings();
         }));
-
+    
+    // Setting for property name
     new Setting(containerEl)
       .setName('Property Name')
       .setDesc('Enter the name of the property to check in note frontmatter.')
@@ -172,7 +176,8 @@ export class CustomViewPluginSettingsTab extends PluginSettingTab {
           this.plugin.settings.propertyName = value;
           await this.plugin.saveSettings();
         }));
-
+    
+    // Setting for allowed property values
     new Setting(containerEl)
       .setName('Allowed Property Values')
       .setDesc('Enter a comma-separated list of values for the property. The note\'s property value must match one of these.')
