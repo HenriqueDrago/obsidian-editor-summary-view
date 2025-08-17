@@ -780,20 +780,20 @@ export default class CustomViewPlugin extends Plugin {
 		// This is the function that will perform the replacement
 		const performReplacement = (text: string): string => {
 			if (quoteType === "single") {
-				// Replacing with a right single quote/apostrophe for simplicity
-				return text.replace(/'/g, "’");
+				// Simple Quotes
+				// Replace opening quotes (checks for leading spaces, start of the string and punctuation)
+				text = text.replace(/(\s|^|\p{P})'/gu, '$1‘');
+				// Replace closing quotes and apostrophes (what remains)
+				text = text.replace(/'/g, '’');
+				return text;
 			} else {
-				// For double quotes, alternate between opening and closing.
-				let isOpening = true;
-				return text.replace(/"/g, () => {
-					if (isOpening) {
-						isOpening = false;
-						return "“"; // Opening double quote
-					} else {
-						isOpening = true;
-						return "”"; // Closing double quote
-					}
-				});
+				// Double Quotes
+				// Replace opening quotes (checks for leading spaces, start of the string and punctuation)
+				text = text.replace(/(\s|^|\p{P})"/gu, '$1“');
+				// Replace closing quotes (what remains)
+				text = text.replace(/"/g, '”');
+				
+				return text;
 			}
 		};
 
